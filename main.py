@@ -1,50 +1,51 @@
 from fastapi import FastAPI, HTTPException
 from inference import run_inference
-import os
 
 app = FastAPI()
 
-# ======================================================
+# ==========================================
 # MODO GLOBAL
-# ======================================================
-MODE = os.getenv("MODE", "collect")  # collect | detect
+# ==========================================
+current_mode = "collect"  # collect | detect
 
 
-# ======================================================
+# ==========================================
 # ROOT TEST
-# ======================================================
+# ==========================================
 @app.get("/")
 def root():
-    return {"status": "FUNCIONA", "mode": MODE}
-
-
-# ======================================================
-# CAMBIAR MODO
-# ======================================================
-@app.post("/api/v1/set_mode")
-def set_mode(data: dict):
-    global MODE
-
-    mode = data.get("mode")
-
-    if mode not in ["collect", "detect"]:
-        raise HTTPException(400, "Modo inválido")
-
-    MODE = mode
-
     return {
-        "mode": MODE,
-        "message": "Modo actualizado"
+        "status": "Servidor activo",
+        "mode": current_mode
     }
 
 
-# ======================================================
-# RECEPCIÓN DE SEÑALES
-# ======================================================
-@app.post("/api/v1/signals")
-def receive_signals(payload: dict):
+# ==========================================
+# TRIGGER CAMBIO DE MODO
+# ==========================================
+@app.post("/api/v1/set_mode")
+def set_mode(payload: dict):
 
-    global MODE
+    global current_mode
+
+    mode = payload.get("mode")
+
+    if mode not in ["collect", "detect"]:
+        raise HTTPException(status_code=400, detail="Modo inválido")
+
+    current_mode = mode
+
+    return {
+        "status": "modo actualizado",
+        "mode": current_mode
+    }
+
+
+# ==========================================
+# RECEPCIÓN DE SEÑALES
+# ==========================================
+@app.post("/api/v1/predict")
+def predict(payload: dict):
 
     try:
         signals = payload["signals"]
@@ -56,21 +57,26 @@ def receive_signals(payload: dict):
                 f"Se esperaban 128 muestras, se recibieron {n}"
             )
 
-        # ---------- SOLO RECOLECTAR ----------
-        if MODE == "collect":
+        # ---------------------------
+        # SOLO RECOLECCIÓN
+        # ---------------------------
+        if current_mode == "collect":
+
             return {
-                "mode": MODE,
+                "mode": current_mode,
                 "signals": signals,
-                "status": "recibido"
+                "prediction": None
             }
 
-        # ---------- IA ACTIVADA ----------
+        # ---------------------------
+        # DETECCIÓN IA
+        # ---------------------------
         prediction = run_inference(signals)
 
         return {
-            "mode": MODE,
-            "prediction": prediction,
-            "signals": signals
+            "mode": current_mode,
+            "signals": signals,
+            "prediction": prediction
         }
 
     except Exception as e:
