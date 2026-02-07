@@ -1,7 +1,7 @@
 import requests
 import numpy as np
 
-URL = "http://127.0.0.1:8000/api/v1/predict"
+URL = "https://fog-ia-detection-3.onrender.com/api/v1/predict"
 
 N = 128  # 👈 número correcto de muestras
 
