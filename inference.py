@@ -2,7 +2,7 @@ import tensorflow as tf
 from preprocessing import preprocess
 from custom_layers import TimeSeriesAugment
 
-# 👇 Registrar capas personalizadas
+# Registrar capa personalizada
 custom_objects = {
     "TimeSeriesAugment": TimeSeriesAugment
 }
@@ -13,7 +13,11 @@ model = tf.keras.models.load_model(
 )
 
 def run_inference(signals: dict):
-    X = preprocess(signals)   # (1, 128, 9)
+
+    # Preprocesar señales (1,128,9)
+    X = preprocess(signals)
+
+    # Inferencia IA
     y = model.predict(X, verbose=0)
 
     prob = float(y[0][0])
