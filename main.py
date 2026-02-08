@@ -1,83 +1,94 @@
 from fastapi import FastAPI, HTTPException
 from inference import run_inference
+from firebase_writter import send_to_firebase
 
 app = FastAPI()
 
-# ==========================================
+# ======================================
 # MODO GLOBAL
-# ==========================================
-current_mode = "collect"  # collect | detect
+# ======================================
+MODE = "collect"
+
+# ======================================
+# BUFFER GLOBAL (STREAMING)
+# ======================================
+BUFFER = {
+    "ankle": {"x": [], "y": [], "z": []},
+    "thigh": {"x": [], "y": [], "z": []},
+    "hip": {"x": [], "y": [], "z": []},
+}
+
+WINDOW_SIZE = 128
 
 
-# ==========================================
-# ROOT TEST
-# ==========================================
 @app.get("/")
 def root():
-    return {
-        "status": "Servidor activo",
-        "mode": current_mode
-    }
+    return {"status": "OK", "mode": MODE}
 
 
-# ==========================================
-# TRIGGER CAMBIO DE MODO
-# ==========================================
+# ======================================
+# CAMBIO MODO IA
+# ======================================
 @app.post("/api/v1/set_mode")
-def set_mode(payload: dict):
+def set_mode(data: dict):
 
-    global current_mode
+    global MODE
 
-    mode = payload.get("mode")
+    mode = data.get("mode")
 
     if mode not in ["collect", "detect"]:
         raise HTTPException(status_code=400, detail="Modo inválido")
 
-    current_mode = mode
-
-    return {
-        "status": "modo actualizado",
-        "mode": current_mode
-    }
+    MODE = mode
+    return {"mode": MODE}
 
 
-# ==========================================
-# RECEPCIÓN DE SEÑALES
-# ==========================================
+# ======================================
+# RECEPCIÓN STREAMING SEÑALES
+# ======================================
 @app.post("/api/v1/predict")
 def predict(payload: dict):
 
     try:
+
         signals = payload["signals"]
 
-        # Validación básica
-        n = len(signals["ankle"]["x"])
-        if n != 128:
-            raise ValueError(
-                f"Se esperaban 128 muestras, se recibieron {n}"
-            )
+        # ==================================================
+        # ACUMULAR CHUNKS
+        # ==================================================
+        for sensor in ["ankle", "thigh", "hip"]:
+            for axis in ["x", "y", "z"]:
+                BUFFER[sensor][axis].extend(signals[sensor][axis])
 
-        # ---------------------------
-        # SOLO RECOLECCIÓN
-        # ---------------------------
-        if current_mode == "collect":
+        # ==================================================
+        # SI YA HAY VENTANA COMPLETA
+        # ==================================================
+        prediction = None
 
-            return {
-                "mode": current_mode,
-                "signals": signals,
-                "prediction": None
+        if len(BUFFER["ankle"]["x"]) >= WINDOW_SIZE:
+
+            # Construir ventana
+            window = {
+                s: {
+                    a: BUFFER[s][a][:WINDOW_SIZE]
+                    for a in ["x", "y", "z"]
+                }
+                for s in ["ankle", "thigh", "hip"]
             }
 
-        # ---------------------------
-        # DETECCIÓN IA
-        # ---------------------------
-        prediction = run_inference(signals)
+            # Limpiar buffer
+            for s in BUFFER:
+                for a in BUFFER[s]:
+                    BUFFER[s][a] = BUFFER[s][a][WINDOW_SIZE:]
 
-        return {
-            "mode": current_mode,
-            "signals": signals,
-            "prediction": prediction
-        }
+            # Ejecutar IA solo si detect
+            if MODE == "detect":
+                prediction = run_inference(window)
+
+            # Enviar a Firebase
+            send_to_firebase(window, prediction)
+
+        return {"status": "chunk recibido"}
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
