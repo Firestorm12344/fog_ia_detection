@@ -119,3 +119,13 @@ async def predict(request: Request):
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/test_binario")
+async def test_binario(request: Request):
+
+    raw = await request.body()
+
+    print("Bytes recibidos:", len(raw))
+
+    return {"bytes": len(raw)}
