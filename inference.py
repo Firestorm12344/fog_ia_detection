@@ -1,36 +1,20 @@
 import tensorflow as tf
-import numpy as np
+from preprocessing import preprocess
 from custom_layers import TimeSeriesAugment
 
-
-# ==========================================
-# REGISTRO CAPAS CUSTOM
-# ==========================================
 custom_objects = {
     "TimeSeriesAugment": TimeSeriesAugment
 }
 
-
-# ==========================================
-# CARGA MODELO (UNA SOLA VEZ)
-# ==========================================
 model = tf.keras.models.load_model(
     "model/modelo.h5",
     custom_objects=custom_objects
 )
 
 
-# ==========================================
-# INFERENCIA DIRECTA MATRIZ
-# ==========================================
-def run_inference(X):
+def run_inference(signals: dict):
 
-    # Asegurar numpy float32
-    X = np.array(X, dtype=np.float32)
-
-    # Asegurar shape (1,128,9)
-    if X.ndim == 2:
-        X = X[np.newaxis, :, :]
+    X = preprocess(signals)  # (1,128,9)
 
     y = model.predict(X, verbose=0)
 
