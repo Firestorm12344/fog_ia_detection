@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 import numpy as np
+from datetime import datetime
 from inference import run_inference
 from firebase_writter import send_to_firebase
 
@@ -11,7 +12,7 @@ app = FastAPI()
 MODE = "collect"
 
 # ======================================
-# BUFFER GLOBAL (STREAMING)
+# BUFFER GLOBAL
 # ======================================
 BUFFER = {
     "ankle": {"x": [], "y": [], "z": []},
@@ -20,8 +21,12 @@ BUFFER = {
 }
 
 WINDOW_SIZE = 128
+MAX_BUFFER = 2000
 
 
+# ======================================
+# STATUS SERVER
+# ======================================
 @app.get("/")
 def root():
     return {"status": "OK", "mode": MODE}
@@ -39,11 +44,10 @@ def health():
 def set_mode(data: dict):
 
     global MODE
-
     mode = data.get("mode")
 
     if mode not in ["collect", "detect"]:
-        raise HTTPException(status_code=400, detail="Modo inválido")
+        raise HTTPException(400, "Modo inválido")
 
     MODE = mode
     return {"mode": MODE}
@@ -56,18 +60,19 @@ def set_mode(data: dict):
 async def predict(request: Request):
 
     try:
-
         raw = await request.body()
 
-        # Convertir bytes → int16
-        data = np.frombuffer(raw, dtype=np.int16)
+        # Validación payload
+        if len(raw) % (9 * 2) != 0:
+            raise HTTPException(400, "Payload IMU corrupto")
 
-        # Cada fila = 9 valores
+        # bytes → numpy int16
+        data = np.frombuffer(raw, dtype=np.int16)
         data = data.reshape(-1, 9)
 
-        print("Samples recibidos:", len(data))
+        print(f"Chunk IMU recibido: {len(data)} muestras")
 
-        # Convertir al formato signals original
+        # Convertir a formato signals
         signals = {
             "ankle": {"x": [], "y": [], "z": []},
             "thigh": {"x": [], "y": [], "z": []},
@@ -75,7 +80,6 @@ async def predict(request: Request):
         }
 
         for row in data:
-
             signals["ankle"]["x"].append(int(row[0]))
             signals["ankle"]["y"].append(int(row[1]))
             signals["ankle"]["z"].append(int(row[2]))
@@ -93,8 +97,16 @@ async def predict(request: Request):
             for axis in ["x", "y", "z"]:
                 BUFFER[sensor][axis].extend(signals[sensor][axis])
 
+        # Protección overflow buffer
+        if len(BUFFER["ankle"]["x"]) > MAX_BUFFER:
+            print("Buffer recortado")
+            for s in BUFFER:
+                for a in BUFFER[s]:
+                    BUFFER[s][a] = BUFFER[s][a][-WINDOW_SIZE:]
+
         prediction = None
 
+        # Ventana completa IA + Firebase
         if len(BUFFER["ankle"]["x"]) >= WINDOW_SIZE:
 
             window = {
@@ -113,19 +125,25 @@ async def predict(request: Request):
             if MODE == "detect":
                 prediction = run_inference(window)
 
-            send_to_firebase(window, prediction)
+            send_to_firebase({
+                "signals": window,
+                "prediction": prediction,
+                "timestamp": datetime.utcnow().isoformat()
+            })
 
         return {"status": "binario recibido"}
 
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(400, str(e))
 
 
+# ======================================
+# TEST DEBUG BINARIO
+# ======================================
 @app.post("/test_binario")
 async def test_binario(request: Request):
 
     raw = await request.body()
-
     print("Bytes recibidos:", len(raw))
 
     return {"bytes": len(raw)}
