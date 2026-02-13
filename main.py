@@ -96,6 +96,8 @@ async def predict(request: Request):
         for sensor in ["ankle", "thigh", "hip"]:
             for axis in ["x", "y", "z"]:
                 BUFFER[sensor][axis].extend(signals[sensor][axis])
+        print(f"Buffer acumulado: {len(BUFFER['ankle']['x'])}/{WINDOW_SIZE}")
+
 
         # Protección overflow buffer
         if len(BUFFER["ankle"]["x"]) > MAX_BUFFER:
