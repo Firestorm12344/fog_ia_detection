@@ -125,10 +125,12 @@ async def predict(request: Request):
             if MODE == "detect":
                 prediction = run_inference(window)
 
-            send_to_firebase(
-                window,
-                prediction
-            )
+            send_to_firebase({
+                "signals": window,
+                "prediction": prediction,
+                "timestamp": datetime.utcnow().isoformat()
+            })
+
 
         return {"status": "binario recibido"}
 
